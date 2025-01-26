@@ -1,0 +1,59 @@
+name: Gaabi
+options:
+  bundleIdPrefix: com.gaabi
+  deploymentTarget:
+    iOS: 15.0
+  xcodeVersion: "14.0"
+  generateEmptyDirectories: true
+
+targets:
+  Gaabi:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+        excludes:
+          - "**/.DS_Store"
+      - path: Sources/Resources
+        type: group
+        excludes:
+          - "**/.DS_Store"
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.gaabi.app
+        DEVELOPMENT_TEAM: ""  # Add your development team ID here
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: 1,2
+        SUPPORTS_MACCATALYST: NO
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        CURRENT_PROJECT_VERSION: 1
+        MARKETING_VERSION: 1.0.0
+    info:
+      path: Sources/Info.plist
+      properties:
+        CFBundleName: Gaabi
+        CFBundleDisplayName: Gaabi
+        CFBundleIdentifier: com.gaabi.app
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        UILaunchStoryboardName: LaunchScreen
+        LSRequiresIPhoneOS: true
+        UIRequiredDeviceCapabilities:
+          - armv7
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+          UISceneConfigurations:
+            UIWindowSceneSessionRoleApplication:
+              - UISceneConfigurationName: Default Configuration
+                UISceneDelegateClassName: $(PRODUCT_MODULE_NAME).SceneDelegate 

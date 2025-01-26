@@ -1,0 +1,133 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: gaabi_mongodb
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: gaabi_admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD:-gaabi_password}
+      MONGO_INITDB_DATABASE: gaabi_db
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+      - ./mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+      - ./backups:/data/backup
+      - ./ssl/mongodb.pem:/etc/ssl/mongodb.pem:ro
+      - ./ssl/mongodb-client.pem:/etc/ssl/mongodb-client.pem:ro
+    networks:
+      - gaabi_network
+    command: [
+      "--auth",
+      "--bind_ip_all",
+      "--tlsMode", "requireTLS",
+      "--tlsCertificateKeyFile", "/etc/ssl/mongodb.pem",
+      "--tlsCAFile", "/etc/ssl/mongodb-client.pem",
+      "--setParameter", "authenticationMechanisms=SCRAM-SHA-1,SCRAM-SHA-256"
+    ]
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh --tls --tlsAllowInvalidCertificates --tlsCertificateKeyFile /etc/ssl/mongodb-client.pem --quiet mongodb://gaabi_admin:${MONGODB_PASSWORD:-gaabi_password}@localhost:27017/gaabi_db?authSource=admin
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    ulimits:
+      nproc: 64000
+      nofile:
+        soft: 64000
+        hard: 64000
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: gaabi_mongo_express
+    restart: always
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: gaabi_admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGODB_PASSWORD:-gaabi_password}
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_BASICAUTH_USERNAME: admin
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-admin_password}
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: "true"
+      ME_CONFIG_SITE_BASEURL: "/admin"
+      ME_CONFIG_SITE_COOKIESECRET: ${COOKIE_SECRET:-cookie_secret}
+      ME_CONFIG_SITE_SESSIONSECRET: ${SESSION_SECRET:-session_secret}
+      ME_CONFIG_MONGODB_SSL: "true"
+      ME_CONFIG_MONGODB_SSL_VALIDATE: "false"
+      ME_CONFIG_MONGODB_TLS: "true"
+      ME_CONFIG_MONGODB_TLS_CA_FILE: "/etc/ssl/mongodb-client.pem"
+      ME_CONFIG_MONGODB_TLS_ALLOW_INVALID_CERTIFICATES: "true"
+      ME_CONFIG_MONGODB_URL: mongodb://gaabi_admin:${MONGODB_PASSWORD:-gaabi_password}@mongodb:27017/gaabi_db?authSource=admin&tls=true&tlsCAFile=/etc/ssl/mongodb-client.pem&tlsAllowInvalidCertificates=true
+    volumes:
+      - ./ssl/mongodb-client.pem:/etc/ssl/mongodb-client.pem:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - gaabi_network
+    healthcheck:
+      test: wget --quiet --tries=3 --spider http://localhost:8081 || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    security_opt:
+      - no-new-privileges:true
+
+  # Backup service
+  backup:
+    image: mongo:latest
+    container_name: gaabi_backup
+    volumes:
+      - ./backups:/backup
+      - ./scripts:/scripts
+      - ./ssl/mongodb-client.pem:/etc/ssl/mongodb-client.pem:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - gaabi_network
+    entrypoint: ["/bin/sh", "-c", "apt-get update && apt-get install -y cron && chmod +x /scripts/backup.sh && touch /var/log/cron.log && crontab /scripts/backup-cron && service cron start && tail -f /var/log/cron.log"]
+    environment:
+      MONGODB_URI: mongodb://gaabi_admin:${MONGODB_PASSWORD:-gaabi_password}@mongodb:27017/gaabi_db?authSource=admin&tls=true&tlsCAFile=/etc/ssl/mongodb-client.pem&tlsAllowInvalidCertificates=true
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mongodb_data:
+    name: gaabi_mongodb_data
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data/mongodb
+      o: bind
+  mongodb_config:
+    name: gaabi_mongodb_config
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data/mongodb_config
+      o: bind
+  backup_data:
+    driver: local
+    driver_opts:
+      type: none
+      device: ${PWD}/data/backup
+      o: bind
+
+networks:
+  gaabi_network:
+    name: gaabi_network
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: gaabi_net
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16

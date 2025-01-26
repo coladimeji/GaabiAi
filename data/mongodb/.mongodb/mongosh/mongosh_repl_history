@@ -1,0 +1,15 @@
+^C
+docker exec -it gaabi_mongodb mongosh --tls --tlsAllowInvalidCertificates --tlsCertificateKeyFile /etc/ssl/mongodb-client.pem "mongodb://gaabi_admin:your_secure_password_here@localhost:27017/gaabi_db?authSource=admin" --eval "db.serverStatus().ok"
+^C
+docker exec -it gaabi_mongodb mongosh --tls --tlsAllowInvalidCertificates --tlsCertificateKeyFile /etc/ssl/mongodb-client.pem "mongodb://gaabi_admin:your_secure_password_here@localhost:27017/gaabi_db?authSource=admin" --eval "db.getCollectionNames()"
+^C
+docker logs gaabi_mongo_express
+^C
+docker exec -it gaabi_mongodb mongosh "mongodb://gaabi_admin:your_secure_password_here@localhost:27017/gaabi_db?authSource=admin" --quiet --eval "db.getCollectionNames()"
+^C
+docker exec -it gaabi_mongodb mongosh "mongodb://gaabi_admin:your_secure_password_here@localhost:27017/gaabi_db?authSource=admin" --eval "db.getCollectionNames(); db.users.getIndexes(); db.tasks.getIndexes(); db.habits.getIndexes(); db.voice_notes.getIndexes();"
+^C
+docker exec -it gaabi_mongodb mongosh "mongodb://gaabi_admin:gaabi_password@localhost:27017/admin?tls=true&tlsAllowInvalidCertificates=true&tlsCertificateKeyFile=/etc/ssl/mongodb-client.pem"
+^C
+docker exec -it gaabi_mongodb mongosh --tls --tlsAllowInvalidCertificates --tlsCertificateKeyFile /etc/ssl/mongodb-client.pem -u gaabi_admin -p gaabi_password --authenticationDatabase admin
+^C
