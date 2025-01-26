@@ -2,385 +2,249 @@ import SwiftUI
 import CoreLocation
 
 struct DashboardView: View {
-    @StateObject private var viewModel = DashboardViewModel()
-    @State private var selectedTab = 0
-    @State private var showingNewTaskSheet = false
-    @State private var showingNewHabitSheet = false
-    @State private var isRecording = false
+    @EnvironmentObject var taskManager: TaskManager
+    @EnvironmentObject var locationManager: LocationManager
+    @EnvironmentObject var voiceManager: VoiceManager
+    @EnvironmentObject var aiManager: AIManager
+    @EnvironmentObject var smartHomeManager: SmartHomeManager
+    
+    @State private var showingAIAssistant = false
+    @State private var aiPrompt = ""
     
     var body: some View {
-        TabView(selection: $selectedTab) {
-            // Today View
-            NavigationView {
-                TodayView(viewModel: viewModel)
+        ScrollView {
+            VStack(spacing: 16) {
+                LocationSummaryCard(locationManager: locationManager)
+                
+                TasksOverviewCard(taskManager: taskManager)
+                
+                HabitsProgressCard(taskManager: taskManager)
+                
+                AIAssistantCard(isPresented: $showingAIAssistant)
+                
+                QuickActionsCard()
             }
-            .tabItem {
-                Label("Today", systemImage: "calendar")
-            }
-            .tag(0)
-            
-            // Tasks View
-            NavigationView {
-                TaskListView(viewModel: viewModel)
-            }
-            .tabItem {
-                Label("Tasks", systemImage: "checklist")
-            }
-            .tag(1)
-            
-            // Habits View
-            NavigationView {
-                HabitListView(viewModel: viewModel)
-            }
-            .tabItem {
-                Label("Habits", systemImage: "repeat")
-            }
-            .tag(2)
-            
-            // Smart Home View
-            NavigationView {
-                SmartHomeView(viewModel: viewModel)
-            }
-            .tabItem {
-                Label("Home", systemImage: "house")
-            }
-            .tag(3)
-            
-            // Settings View
-            NavigationView {
-                SettingsView(viewModel: viewModel)
-            }
-            .tabItem {
-                Label("Settings", systemImage: "gear")
-            }
-            .tag(4)
+            .padding()
         }
-        .overlay(alignment: .bottom) {
-            if selectedTab < 3 {
-                QuickActionButton(
-                    isRecording: $isRecording,
-                    showingNewTaskSheet: $showingNewTaskSheet,
-                    showingNewHabitSheet: $showingNewHabitSheet,
-                    selectedTab: selectedTab
-                )
-                .padding(.bottom, 85)
-            }
+        .navigationTitle("Dashboard")
+        .sheet(isPresented: $showingAIAssistant) {
+            AIAssistantView(aiManager: aiManager, prompt: $aiPrompt)
         }
     }
 }
 
-struct TodayView: View {
-    @ObservedObject var viewModel: DashboardViewModel
-    @State private var showingScheduleOptimization = false
-    
-    var body: some View {
-        List {
-            // Weather Section
-            if let weather = viewModel.currentWeather {
-                WeatherSummaryView(weather: weather)
-            }
-            
-            // Schedule Section
-            Section("Today's Schedule") {
-                ForEach(viewModel.todayEvents) { event in
-                    ScheduleEventRow(event: event)
-                }
-            }
-            
-            // Tasks Section
-            Section("Tasks") {
-                ForEach(viewModel.todayTasks) { task in
-                    TaskRow(task: task)
-                }
-            }
-            
-            // Habits Section
-            Section("Habits") {
-                ForEach(viewModel.todayHabits) { habit in
-                    HabitRow(habit: habit)
-                }
-            }
-            
-            // Smart Home Section
-            if !viewModel.activeDevices.isEmpty {
-                Section("Active Devices") {
-                    ForEach(viewModel.activeDevices) { device in
-                        SmartDeviceRow(device: device)
-                    }
-                }
-            }
-        }
-        .navigationTitle("Today")
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button {
-                    showingScheduleOptimization = true
-                } label: {
-                    Image(systemName: "wand.and.stars")
-                }
-            }
-        }
-        .sheet(isPresented: $showingScheduleOptimization) {
-            ScheduleOptimizationView(viewModel: viewModel)
-        }
-        .refreshable {
-            await viewModel.refreshData()
-        }
-    }
-}
-
-struct WeatherSummaryView: View {
-    let weather: CurrentWeather
-    
-    var body: some View {
-        HStack {
-            Image(systemName: weather.getWeatherIcon())
-                .font(.title)
-            VStack(alignment: .leading) {
-                Text("\(Int(round(weather.temp)))°C")
-                    .font(.title2)
-                Text(weather.weather.first?.description.capitalized ?? "")
-                    .font(.subheadline)
-            }
-        }
-        .padding(.vertical, 8)
-    }
-}
-
-struct ScheduleEventRow: View {
-    let event: ScheduleEvent
+struct LocationSummaryCard: View {
+    let locationManager: LocationManager
     
     var body: some View {
         VStack(alignment: .leading) {
-            HStack {
-                Text(event.title)
-                    .font(.headline)
-                Spacer()
-                Text(formatTime(event.timeSlot.start))
+            Text("Current Location")
+                .font(.headline)
+            if let address = locationManager.lastKnownAddress {
+                Text(address)
+                    .font(.subheadline)
+            } else {
+                Text("Updating location...")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
             }
-            
-            if let location = event.location {
-                Label(location.address, systemImage: "location")
+            if let trafficInfo = locationManager.trafficInfo {
+                Text(trafficInfo)
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
-            
-            if let routeInfo = event.routeInfo {
-                Label(
-                    "\(Int(routeInfo.estimatedDuration / 60)) min travel time",
-                    systemImage: "car"
-                )
-                .font(.caption)
-                .foregroundColor(.blue)
-            }
         }
-        .padding(.vertical, 4)
-    }
-    
-    private func formatTime(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter.string(from: date)
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(radius: 2)
     }
 }
 
-struct TaskRow: View {
-    let task: SmartTask
+struct TasksOverviewCard: View {
+    let taskManager: TaskManager
     
     var body: some View {
-        HStack {
-            Image(systemName: task.status == .completed ? "checkmark.circle.fill" : "circle")
-                .foregroundColor(task.status == .completed ? .green : .gray)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Tasks")
+                .font(.headline)
             
-            VStack(alignment: .leading) {
-                Text(task.title)
-                    .strikethrough(task.status == .completed)
+            HStack {
+                VStack(alignment: .leading) {
+                    Text("\(taskManager.tasks.filter { $0.isOverdue }.count)")
+                        .font(.title)
+                        .foregroundColor(.red)
+                    Text("Overdue")
+                        .font(.caption)
+                }
                 
-                if !task.tags.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack {
-                            ForEach(Array(task.tags), id: \.self) { tag in
-                                Text(tag)
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                                    .background(Color.blue.opacity(0.2))
-                                    .cornerRadius(8)
-                            }
-                        }
-                    }
+                Spacer()
+                
+                VStack(alignment: .leading) {
+                    Text("\(taskManager.tasks.filter { $0.dueDate.isToday }.count)")
+                        .font(.title)
+                        .foregroundColor(.primary)
+                    Text("Today")
+                        .font(.caption)
+                }
+                
+                Spacer()
+                
+                VStack(alignment: .leading) {
+                    Text("\(taskManager.tasks.filter { $0.isCompleted }.count)")
+                        .font(.title)
+                        .foregroundColor(.green)
+                    Text("Completed")
+                        .font(.caption)
                 }
             }
-            
-            Spacer()
-            
-            if task.isOverdue {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundColor(.red)
-            }
         }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(radius: 2)
     }
 }
 
-struct HabitRow: View {
-    let habit: Habit
+struct HabitsProgressCard: View {
+    let taskManager: TaskManager
+    
+    var completionRate: Double {
+        let habits = taskManager.habits
+        guard !habits.isEmpty else { return 0 }
+        let completedToday = habits.filter { $0.isCompletedToday }.count
+        return Double(completedToday) / Double(habits.count)
+    }
     
     var body: some View {
-        HStack {
-            VStack(alignment: .leading) {
-                Text(habit.title)
-                    .font(.headline)
-                Text("Streak: \(habit.currentStreak) days")
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Habits")
+                .font(.headline)
+            
+            ProgressView(value: completionRate)
+                .progressViewStyle(LinearProgressViewStyle(tint: .blue))
+            
+            HStack {
+                Text("\(Int(completionRate * 100))% Complete")
                     .font(.caption)
+                Spacer()
+                Text("\(taskManager.habits.filter { $0.isCompletedToday }.count)/\(taskManager.habits.count) Today")
+                    .font(.caption)
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(radius: 2)
+    }
+}
+
+struct AIAssistantCard: View {
+    @Binding var isPresented: Bool
+    
+    var body: some View {
+        Button(action: { isPresented = true }) {
+            HStack {
+                Image(systemName: "brain")
+                    .font(.title2)
+                VStack(alignment: .leading) {
+                    Text("AI Assistant")
+                        .font(.headline)
+                    Text("Get help with tasks and automation")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
                     .foregroundColor(.secondary)
             }
-            
-            Spacer()
-            
-            Text("\(habit.completedDates.count)/\(habit.frequency.description)")
-                .font(.caption)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.green.opacity(0.2))
-                .cornerRadius(8)
+            .padding()
+            .frame(maxWidth: .infinity)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(radius: 2)
         }
+        .buttonStyle(PlainButtonStyle())
     }
 }
 
-struct SmartDeviceRow: View {
-    let device: IoTDevice
-    
+struct QuickActionsCard: View {
     var body: some View {
-        HStack {
-            Image(systemName: iconForDevice(device.type))
-                .foregroundColor(device.isConnected ? .green : .gray)
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Quick Actions")
+                .font(.headline)
             
-            Text(device.name)
-            
-            Spacer()
-            
-            if device.isConnected {
-                Text("Connected")
-                    .font(.caption)
-                    .foregroundColor(.green)
-            } else {
-                Text("Disconnected")
-                    .font(.caption)
-                    .foregroundColor(.gray)
+            HStack(spacing: 12) {
+                QuickActionButton(title: "New Task", systemImage: "plus.circle", color: .blue)
+                QuickActionButton(title: "New Habit", systemImage: "repeat.circle", color: .green)
+                QuickActionButton(title: "Smart Home", systemImage: "homekit", color: .orange)
             }
         }
-    }
-    
-    private func iconForDevice(_ type: IoTDeviceType) -> String {
-        switch type {
-        case .smartLight: return "lightbulb"
-        case .thermostat: return "thermometer"
-        case .speaker: return "speaker.wave.2"
-        case .lock: return "lock"
-        case .camera: return "camera"
-        case .sensor: return "sensor"
-        }
+        .padding()
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(radius: 2)
     }
 }
 
 struct QuickActionButton: View {
-    @Binding var isRecording: Bool
-    @Binding var showingNewTaskSheet: Bool
-    @Binding var showingNewHabitSheet: Bool
-    let selectedTab: Int
+    let title: String
+    let systemImage: String
+    let color: Color
     
     var body: some View {
-        Button {
-            switch selectedTab {
-            case 0: // Today - Voice Note
-                isRecording.toggle()
-            case 1: // Tasks
-                showingNewTaskSheet = true
-            case 2: // Habits
-                showingNewHabitSheet = true
-            default:
-                break
-            }
-        } label: {
-            Image(systemName: iconForTab)
+        VStack {
+            Image(systemName: systemImage)
                 .font(.title2)
-                .foregroundColor(.white)
-                .frame(width: 60, height: 60)
-                .background(colorForTab)
-                .clipShape(Circle())
-                .shadow(radius: 4)
+                .foregroundColor(color)
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.primary)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(Color(.systemBackground))
+        .cornerRadius(8)
     }
+}
+
+struct AIAssistantView: View {
+    let aiManager: AIManager
+    @Binding var prompt: String
+    @Environment(\.dismiss) var dismiss
     
-    private var iconForTab: String {
-        switch selectedTab {
-        case 0: return isRecording ? "stop.circle.fill" : "mic.circle.fill"
-        case 1: return "plus.circle.fill"
-        case 2: return "plus.circle.fill"
-        default: return "plus.circle.fill"
-        }
-    }
-    
-    private var colorForTab: Color {
-        switch selectedTab {
-        case 0: return isRecording ? .red : .blue
-        case 1: return .blue
-        case 2: return .green
-        default: return .blue
+    var body: some View {
+        NavigationView {
+            VStack {
+                TextField("Ask me anything...", text: $prompt)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .padding()
+                
+                if let response = aiManager.lastResponse {
+                    Text(response)
+                        .padding()
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                
+                Spacer()
+            }
+            .navigationTitle("AI Assistant")
+            .navigationBarItems(trailing: Button("Done") {
+                dismiss()
+            })
         }
     }
 }
 
-class DashboardViewModel: ObservableObject {
-    @Published var todayEvents: [ScheduleEvent] = []
-    @Published var todayTasks: [SmartTask] = []
-    @Published var todayHabits: [Habit] = []
-    @Published var activeDevices: [IoTDevice] = []
-    @Published var currentWeather: CurrentWeather?
-    
-    private let scheduleManager: DailyScheduleManager
-    private let habitTracker: HabitTracker
-    private let smartHomeManager: SmartHomeManager
-    private let weatherClient: OpenWeatherClient
-    private let locationManager: LocationManager
-    
-    init(
-        scheduleManager: DailyScheduleManager,
-        habitTracker: HabitTracker,
-        smartHomeManager: SmartHomeManager,
-        weatherClient: OpenWeatherClient,
-        locationManager: LocationManager
-    ) {
-        self.scheduleManager = scheduleManager
-        self.habitTracker = habitTracker
-        self.smartHomeManager = smartHomeManager
-        self.weatherClient = weatherClient
-        self.locationManager = locationManager
-        
-        Task {
-            await refreshData()
-        }
-    }
-    
-    @MainActor
-    func refreshData() async {
-        // Fetch today's schedule
-        if let schedule = try? await scheduleManager.createSchedule(for: Date()) {
-            todayEvents = schedule.events
-        }
-        
-        // Fetch weather
-        if let location = await locationManager.getCurrentLocation() {
-            if let weather = try? await weatherClient.getCurrentWeather(
-                latitude: location.coordinate.latitude,
-                longitude: location.coordinate.longitude
-            ) {
-                currentWeather = weather.current
-            }
-        }
-        
-        // TODO: Implement other data fetching
-    }
+#Preview {
+    DashboardView()
+        .environmentObject(TaskManager())
+        .environmentObject(LocationManager())
+        .environmentObject(VoiceManager())
+        .environmentObject(AIManager())
+        .environmentObject(SmartHomeManager())
 } 

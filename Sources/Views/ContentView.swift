@@ -1,4 +1,12 @@
 import SwiftUI
+import Foundation
+
+// Import managers
+@_spi(Gaabi) import TaskManager
+@_spi(Gaabi) import LocationManager
+@_spi(Gaabi) import VoiceManager
+@_spi(Gaabi) import AIManager
+@_spi(Gaabi) import SmartHomeManager
 
 struct ContentView: View {
     @StateObject private var taskManager = TaskManager()
@@ -9,35 +17,40 @@ struct ContentView: View {
     
     var body: some View {
         TabView {
-            DashboardView()
-                .tabItem {
-                    Label("Dashboard", systemImage: "square.grid.2x2")
-                }
+            NavigationView {
+                DashboardView()
+            }
+            .tabItem {
+                Label("Dashboard", systemImage: "square.grid.2x2")
+            }
             
-            TaskListView()
-                .tabItem {
-                    Label("Tasks", systemImage: "checklist")
-                }
+            NavigationView {
+                TaskListView()
+            }
+            .tabItem {
+                Label("Tasks", systemImage: "checklist")
+            }
             
-            VoiceNoteListView()
-                .tabItem {
-                    Label("Voice Notes", systemImage: "waveform")
-                }
+            NavigationView {
+                VoiceNoteListView()
+            }
+            .tabItem {
+                Label("Voice", systemImage: "mic")
+            }
             
-            HabitListView()
-                .tabItem {
-                    Label("Habits", systemImage: "chart.bar.fill")
-                }
+            NavigationView {
+                HabitListView()
+            }
+            .tabItem {
+                Label("Habits", systemImage: "repeat")
+            }
             
-            SmartHomeView()
-                .tabItem {
-                    Label("Smart Home", systemImage: "homekit")
-                }
-            
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gear")
-                }
+            NavigationView {
+                SmartHomeView()
+            }
+            .tabItem {
+                Label("Home", systemImage: "house")
+            }
         }
         .environmentObject(taskManager)
         .environmentObject(locationManager)
@@ -47,9 +60,6 @@ struct ContentView: View {
     }
 }
 
-// Preview Provider
-struct ContentView_Previews: PreviewProvider {
-    static var previews: some View {
-        ContentView()
-    }
+#Preview {
+    ContentView()
 } 

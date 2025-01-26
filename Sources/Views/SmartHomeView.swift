@@ -2,279 +2,291 @@ import SwiftUI
 import CoreBluetooth
 
 struct SmartHomeView: View {
-    @StateObject private var viewModel = SmartHomeViewModel()
-    @State private var showingAddDevice = false
-    @State private var showingDeviceScanner = false
-    @State private var showingAddScene = false
-    @State private var selectedDevice: SmartDevice?
-    @State private var searchText = ""
-    @State private var selectedTab = 0
-    
-    private let columns = [
-        GridItem(.adaptive(minimum: 160), spacing: 16)
-    ]
+    @EnvironmentObject var smartHomeManager: SmartHomeManager
+    @State private var selectedRoom: Room?
     
     var body: some View {
-        NavigationView {
-            VStack(spacing: 0) {
-                // Tab Picker
-                Picker("View", selection: $selectedTab) {
-                    Text("Devices").tag(0)
-                    Text("Scenes").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding()
+        ScrollView {
+            VStack(spacing: 16) {
+                ScenesSection(smartHomeManager: smartHomeManager)
                 
-                // Content
-                if selectedTab == 0 {
-                    // Devices View
-                    ScrollView {
-                        LazyVGrid(columns: columns, spacing: 16) {
-                            // Add Device Button
-                            AddDeviceButton(showingAddDevice: $showingAddDevice)
-                            
-                            // Device Cards
-                            ForEach(filteredDevices) { device in
-                                DeviceCard(device: device)
-                                    .onTapGesture {
-                                        selectedDevice = device
-                                    }
-                            }
-                        }
-                        .padding()
-                    }
-                    .searchable(text: $searchText, prompt: "Search devices")
-                } else {
-                    // Scenes View
-                    List {
-                        Section {
-                            Button {
-                                showingAddScene = true
-                            } label: {
-                                Label("Add Scene", systemImage: "plus.circle")
-                            }
-                        }
-                        
-                        if !viewModel.automationScenes.isEmpty {
-                            Section("Automation Scenes") {
-                                ForEach(viewModel.automationScenes, id: \.name) { scene in
-                                    SceneRow(scene: scene, viewModel: viewModel)
-                                }
-                                .onDelete { indexSet in
-                                    indexSet.forEach { index in
-                                        let scene = viewModel.automationScenes[index]
-                                        viewModel.removeScene(scene)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                RoomsGrid(selectedRoom: $selectedRoom, smartHomeManager: smartHomeManager)
+                
+                DevicesSection(
+                    devices: selectedRoom == nil ? smartHomeManager.devices : smartHomeManager.devices.filter { $0.room == selectedRoom },
+                    smartHomeManager: smartHomeManager
+                )
             }
-            .navigationTitle("Smart Home")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    if selectedTab == 0 {
-                        Button {
-                            showingDeviceScanner = true
-                        } label: {
-                            Image(systemName: "plus")
-                        }
-                    }
-                }
-            }
-            .sheet(isPresented: $showingDeviceScanner) {
-                DeviceScannerView(viewModel: viewModel)
-            }
-            .sheet(item: $selectedDevice) { device in
-                DeviceDetailView(device: device, viewModel: viewModel)
-            }
-            .sheet(isPresented: $showingAddScene) {
-                AddSceneView(viewModel: viewModel)
-            }
+            .padding()
         }
-    }
-    
-    private var filteredDevices: [SmartDevice] {
-        if searchText.isEmpty {
-            return viewModel.devices
-        } else {
-            return viewModel.devices.filter {
-                $0.name.localizedCaseInsensitiveContains(searchText) ||
-                $0.type.description.localizedCaseInsensitiveContains(searchText)
-            }
-        }
+        .navigationTitle("Smart Home")
     }
 }
 
-struct DeviceCard: View {
-    let device: SmartDevice
+struct ScenesSection: View {
+    let smartHomeManager: SmartHomeManager
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Image(systemName: iconForDevice(device.type))
-                    .font(.title2)
-                    .foregroundColor(device.isConnected ? .green : .gray)
-                
-                Spacer()
-                
-                Circle()
-                    .fill(device.isOn ? Color.green : Color.gray)
-                    .frame(width: 10, height: 10)
-            }
-            
-            Text(device.name)
+            Text("Scenes")
                 .font(.headline)
             
-            Text(device.type.description)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-            
-            if let schedule = device.schedule?.first {
-                Text("Next: \(schedule.time, style: .time)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(smartHomeManager.scenes) { scene in
+                        SceneButton(scene: scene) {
+                            smartHomeManager.activateScene(scene)
+                        }
+                    }
+                }
             }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(radius: 2)
-    }
-    
-    private func iconForDevice(_ type: DeviceType) -> String {
-        switch type {
-        case .light: return "lightbulb"
-        case .thermostat: return "thermometer"
-        case .lock: return "lock"
-        case .camera: return "camera"
-        case .speaker: return "speaker.wave.2"
-        case .tv: return "tv"
-        case .custom: return "cube"
         }
     }
 }
 
-struct SceneRow: View {
-    let scene: HomeScene
-    @ObservedObject var viewModel: SmartHomeViewModel
-    @State private var isActivating = false
+struct SceneButton: View {
+    let scene: Scene
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: scene.icon)
+                    .font(.title2)
+                Text(scene.name)
+                    .font(.caption)
+            }
+            .frame(width: 80, height: 80)
+            .background(Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(radius: 2)
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+struct RoomsGrid: View {
+    @Binding var selectedRoom: Room?
+    let smartHomeManager: SmartHomeManager
+    
+    let columns = [
+        GridItem(.adaptive(minimum: 100), spacing: 12)
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Rooms")
+                .font(.headline)
+            
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(smartHomeManager.rooms) { room in
+                    RoomButton(
+                        room: room,
+                        isSelected: selectedRoom == room,
+                        deviceCount: smartHomeManager.devices.filter { $0.room == room }.count
+                    ) {
+                        if selectedRoom == room {
+                            selectedRoom = nil
+                        } else {
+                            selectedRoom = room
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct RoomButton: View {
+    let room: Room
+    let isSelected: Bool
+    let deviceCount: Int
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 8) {
+                Image(systemName: room.icon)
+                    .font(.title2)
+                Text(room.name)
+                    .font(.caption)
+                Text("\(deviceCount) devices")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(height: 100)
+            .frame(maxWidth: .infinity)
+            .background(isSelected ? Color.blue.opacity(0.1) : Color(.systemBackground))
+            .cornerRadius(12)
+            .shadow(radius: 2)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(isSelected ? Color.blue : Color.clear, lineWidth: 2)
+            )
+        }
+        .buttonStyle(ScaleButtonStyle())
+    }
+}
+
+struct DevicesSection: View {
+    let devices: [SmartDevice]
+    let smartHomeManager: SmartHomeManager
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Devices")
+                .font(.headline)
+            
+            ForEach(devices) { device in
+                DeviceRow(device: device, smartHomeManager: smartHomeManager)
+            }
+        }
+    }
+}
+
+struct DeviceRow: View {
+    let device: SmartDevice
+    let smartHomeManager: SmartHomeManager
+    @State private var showingDetail = false
     
     var body: some View {
         Button {
-            activateScene()
+            showingDetail = true
         } label: {
             HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(scene.name)
+                Image(systemName: device.icon)
+                    .font(.title2)
+                    .foregroundColor(device.isOn ? .blue : .gray)
+                
+                VStack(alignment: .leading) {
+                    Text(device.name)
                         .font(.headline)
-                    
-                    Text("\(scene.devices.count) devices")
+                    Text(device.room.name)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
                 
                 Spacer()
                 
-                if isActivating {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                } else {
-                    Image(systemName: "play.circle")
-                        .font(.title2)
-                        .foregroundColor(.accentColor)
+                if device.type == .light || device.type == .thermostat {
+                    Text(device.statusText)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
-            }
-        }
-        .disabled(isActivating)
-    }
-    
-    private func activateScene() {
-        isActivating = true
-        
-        Task {
-            await viewModel.activateScene(scene)
-            isActivating = false
-        }
-    }
-}
-
-struct AddDeviceButton: View {
-    @Binding var showingAddDevice: Bool
-    
-    var body: some View {
-        Button {
-            showingAddDevice = true
-        } label: {
-            VStack(spacing: 12) {
-                Image(systemName: "plus.circle")
-                    .font(.title)
                 
-                Text("Add Device")
-                    .font(.headline)
+                Toggle("", isOn: Binding(
+                    get: { device.isOn },
+                    set: { smartHomeManager.toggleDevice(device, isOn: $0) }
+                ))
+                .labelsHidden()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .aspectRatio(1, contentMode: .fit)
             .padding()
             .background(Color(.systemBackground))
             .cornerRadius(12)
             .shadow(radius: 2)
         }
-        .foregroundColor(.accentColor)
+        .buttonStyle(PlainButtonStyle())
+        .sheet(isPresented: $showingDetail) {
+            DeviceDetailView(device: device, smartHomeManager: smartHomeManager)
+        }
     }
 }
 
-struct DeviceScannerView: View {
-    @Environment(\.dismiss) private var dismiss
-    @ObservedObject var viewModel: SmartHomeViewModel
+struct DeviceDetailView: View {
+    let device: SmartDevice
+    let smartHomeManager: SmartHomeManager
+    @Environment(\.dismiss) var dismiss
     
     var body: some View {
         NavigationView {
-            List {
+            Form {
                 Section {
-                    if viewModel.isScanning {
-                        HStack {
-                            ProgressView()
-                                .padding(.trailing)
-                            Text("Scanning for devices...")
+                    HStack {
+                        Image(systemName: device.icon)
+                            .font(.title)
+                            .foregroundColor(device.isOn ? .blue : .gray)
+                        
+                        VStack(alignment: .leading) {
+                            Text(device.name)
+                                .font(.headline)
+                            Text(device.room.name)
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
                         }
-                    } else {
-                        Button {
-                            viewModel.startScanning()
-                        } label: {
-                            Text("Start Scanning")
+                    }
+                    .padding(.vertical, 8)
+                }
+                
+                Section("Power") {
+                    Toggle("Power", isOn: Binding(
+                        get: { device.isOn },
+                        set: { smartHomeManager.toggleDevice(device, isOn: $0) }
+                    ))
+                }
+                
+                if device.type == .light {
+                    Section("Brightness") {
+                        Slider(
+                            value: Binding(
+                                get: { Double(device.brightness ?? 0) },
+                                set: { smartHomeManager.updateDevice(device, brightness: Int($0)) }
+                            ),
+                            in: 0...100,
+                            step: 1
+                        ) {
+                            Text("Brightness")
+                        } minimumValueLabel: {
+                            Image(systemName: "sun.min")
+                        } maximumValueLabel: {
+                            Image(systemName: "sun.max")
                         }
                     }
                 }
                 
-                if !viewModel.discoveredDevices.isEmpty {
-                    Section("Available Devices") {
-                        ForEach(viewModel.discoveredDevices, id: \.identifier) { peripheral in
-                            Button {
-                                viewModel.connectToDevice(peripheral)
-                                dismiss()
-                            } label: {
-                                HStack {
-                                    Text(peripheral.name ?? "Unknown Device")
-                                    Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .foregroundColor(.secondary)
-                                }
-                            }
+                if device.type == .thermostat {
+                    Section("Temperature") {
+                        Slider(
+                            value: Binding(
+                                get: { Double(device.temperature ?? 20) },
+                                set: { smartHomeManager.updateDevice(device, temperature: Int($0)) }
+                            ),
+                            in: 16...30,
+                            step: 1
+                        ) {
+                            Text("Temperature")
+                        } minimumValueLabel: {
+                            Image(systemName: "thermometer.low")
+                        } maximumValueLabel: {
+                            Image(systemName: "thermometer.high")
                         }
+                        
+                        Text("\(device.temperature ?? 20)°C")
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
             }
-            .navigationTitle("Add Device")
+            .navigationTitle("Device Details")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
                         dismiss()
                     }
                 }
             }
         }
     }
+}
+
+struct ScaleButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.95 : 1)
+            .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+#Preview {
+    SmartHomeView()
+        .environmentObject(SmartHomeManager())
 } 

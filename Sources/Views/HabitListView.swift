@@ -1,292 +1,247 @@
 import SwiftUI
 
 struct HabitListView: View {
-    @StateObject private var viewModel = HabitListViewModel()
+    @EnvironmentObject var taskManager: TaskManager
     @State private var showingNewHabit = false
+    @State private var selectedTimeframe: Timeframe = .day
     @State private var searchText = ""
-    @State private var selectedSortOption: HabitSortOption = .name
     
-    var body: some View {
-        NavigationView {
-            List {
-                // Active Habits Section
-                if !viewModel.activeHabits.isEmpty {
-                    Section("Active Habits") {
-                        ForEach(filteredHabits.filter { $0.isActive }) { habit in
-                            NavigationLink {
-                                HabitDetailView(habit: habit)
-                            } label: {
-                                HabitRow(habit: habit)
-                            }
-                        }
-                    }
-                }
-                
-                // Inactive Habits Section
-                if !viewModel.inactiveHabits.isEmpty {
-                    Section("Inactive Habits") {
-                        ForEach(filteredHabits.filter { !$0.isActive }) { habit in
-                            NavigationLink {
-                                HabitDetailView(habit: habit)
-                            } label: {
-                                HabitRow(habit: habit)
-                            }
-                        }
-                    }
-                }
+    enum Timeframe: String, CaseIterable {
+        case day = "Day"
+        case week = "Week"
+        case month = "Month"
+    }
+    
+    var filteredHabits: [Habit] {
+        taskManager.habits.filter { habit in
+            if searchText.isEmpty {
+                return true
             }
-            .searchable(text: $searchText, prompt: "Search habits")
-            .navigationTitle("Habits")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        showingNewHabit = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Menu {
-                        Picker("Sort By", selection: $selectedSortOption) {
-                            ForEach(HabitSortOption.allCases, id: \.self) { option in
-                                Text(option.description).tag(option)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "arrow.up.arrow.down")
-                    }
-                }
-            }
-            .sheet(isPresented: $showingNewHabit) {
-                NewHabitView { habit in
-                    viewModel.addHabit(habit)
-                }
-            }
+            return habit.title.localizedCaseInsensitiveContains(searchText)
         }
     }
     
-    private var filteredHabits: [Habit] {
-        let habits = viewModel.habits
+    var completionRate: Double {
+        let habits = filteredHabits
+        guard !habits.isEmpty else { return 0 }
         
-        let filtered = searchText.isEmpty ? habits : habits.filter {
-            $0.title.localizedCaseInsensitiveContains(searchText) ||
-            $0.description.localizedCaseInsensitiveContains(searchText)
+        let completedCount: Int
+        switch selectedTimeframe {
+        case .day:
+            completedCount = habits.filter { $0.isCompletedToday }.count
+        case .week:
+            completedCount = habits.filter { $0.isCompletedThisWeek }.count
+        case .month:
+            completedCount = habits.filter { $0.isCompletedThisMonth }.count
         }
         
-        return filtered.sorted { first, second in
-            switch selectedSortOption {
-            case .name:
-                return first.title < second.title
-            case .streak:
-                return first.currentStreak > second.currentStreak
-            case .completion:
-                return first.completionRate > second.completionRate
-            case .created:
-                return first.createdDate > second.createdDate
+        return Double(completedCount) / Double(habits.count)
+    }
+    
+    var body: some View {
+        List {
+            Section {
+                Picker("Timeframe", selection: $selectedTimeframe) {
+                    ForEach(Timeframe.allCases, id: \.self) { timeframe in
+                        Text(timeframe.rawValue).tag(timeframe)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .padding(.vertical, 8)
+                
+                HabitProgressView(completionRate: completionRate)
             }
+            .listRowBackground(Color.clear)
+            
+            if filteredHabits.isEmpty {
+                Section {
+                    Text("No habits yet")
+                        .font(.headline)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding()
+                }
+            } else {
+                Section {
+                    ForEach(filteredHabits) { habit in
+                        HabitRow(habit: habit)
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    taskManager.removeHabit(habit)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                                
+                                Button {
+                                    taskManager.toggleHabitCompletion(habit)
+                                } label: {
+                                    Label(
+                                        habit.isCompletedToday ? "Incomplete" : "Complete",
+                                        systemImage: habit.isCompletedToday ? "xmark.circle" : "checkmark.circle"
+                                    )
+                                }
+                                .tint(habit.isCompletedToday ? .orange : .green)
+                            }
+                    }
+                }
+            }
+        }
+        .searchable(text: $searchText, prompt: "Search habits")
+        .navigationTitle("Habits")
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button {
+                    showingNewHabit = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+        }
+        .sheet(isPresented: $showingNewHabit) {
+            NewHabitView()
+        }
+    }
+}
+
+struct HabitProgressView: View {
+    let completionRate: Double
+    
+    var body: some View {
+        VStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 8)
+                
+                Circle()
+                    .trim(from: 0, to: completionRate)
+                    .stroke(Color.blue, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                
+                VStack {
+                    Text("\(Int(completionRate * 100))%")
+                        .font(.title)
+                        .bold()
+                    Text("Complete")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .frame(width: 120, height: 120)
+            .padding()
+            .frame(maxWidth: .infinity)
         }
     }
 }
 
 struct HabitRow: View {
     let habit: Habit
+    @EnvironmentObject var taskManager: TaskManager
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
+        HStack {
+            Button {
+                taskManager.toggleHabitCompletion(habit)
+            } label: {
+                Image(systemName: habit.isCompletedToday ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(habit.isCompletedToday ? .green : .gray)
+                    .font(.title2)
+            }
+            
+            VStack(alignment: .leading, spacing: 4) {
                 Text(habit.title)
-                    .font(.headline)
+                    .strikethrough(habit.isCompletedToday)
                 
-                Spacer()
-                
-                if habit.isActive {
-                    Text("\(habit.currentStreak) 🔥")
-                        .font(.subheadline)
+                HStack {
+                    Label("\(habit.currentStreak) day streak", systemImage: "flame")
+                        .font(.caption)
                         .foregroundColor(.orange)
-                }
-            }
-            
-            HStack {
-                Text(habit.description)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .lineLimit(1)
-                
-                Spacer()
-                
-                Text("\(Int(habit.completionRate * 100))%")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-            
-            // Progress Bar
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(Color.secondary.opacity(0.2))
-                        .frame(height: 4)
                     
-                    Rectangle()
-                        .fill(Color.blue)
-                        .frame(width: geometry.size.width * habit.completionRate, height: 4)
+                    if habit.hasReminder {
+                        Label("Reminder set", systemImage: "bell.fill")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
                 }
             }
-            .frame(height: 4)
-            .padding(.top, 4)
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(habit.frequency.description)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.blue.opacity(0.1))
+                    .cornerRadius(8)
+                
+                if habit.bestStreak > 0 {
+                    Text("Best: \(habit.bestStreak) days")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+            }
         }
         .padding(.vertical, 4)
     }
 }
 
 struct NewHabitView: View {
-    @Environment(\.dismiss) private var dismiss
-    let onHabitCreated: (Habit) -> Void
+    @Environment(\.dismiss) var dismiss
+    @EnvironmentObject var taskManager: TaskManager
     
     @State private var title = ""
-    @State private var description = ""
-    @State private var frequency = HabitFrequency.daily
-    @State private var reminderTime: Date = Calendar.current.date(from: DateComponents(hour: 9)) ?? Date()
-    @State private var selectedDays: Set<DayOfWeek> = Set(DayOfWeek.allCases)
-    @State private var isLocationBased = false
-    @State private var location: TaskLocation?
-    @State private var showingLocationPicker = false
+    @State private var frequency = Frequency.daily
+    @State private var reminder = false
+    @State private var reminderTime = Date()
+    @State private var notes = ""
     
     var body: some View {
         NavigationView {
             Form {
-                Section("Habit Details") {
+                Section(header: Text("Habit Details")) {
                     TextField("Title", text: $title)
-                    TextField("Description", text: $description)
+                    TextEditor(text: $notes)
+                        .frame(height: 100)
                 }
                 
-                Section("Schedule") {
+                Section(header: Text("Frequency")) {
                     Picker("Frequency", selection: $frequency) {
-                        ForEach(HabitFrequency.allCases, id: \.self) { frequency in
-                            Text(frequency.description).tag(frequency)
-                        }
+                        Text("Daily").tag(Frequency.daily)
+                        Text("Weekly").tag(Frequency.weekly)
+                        Text("Monthly").tag(Frequency.monthly)
                     }
-                    
-                    if frequency == .weekly {
-                        ForEach(DayOfWeek.allCases, id: \.self) { day in
-                            Toggle(day.description, isOn: Binding(
-                                get: { selectedDays.contains(day) },
-                                set: { isSelected in
-                                    if isSelected {
-                                        selectedDays.insert(day)
-                                    } else {
-                                        selectedDays.remove(day)
-                                    }
-                                }
-                            ))
-                        }
-                    }
-                    
-                    DatePicker("Reminder Time", selection: $reminderTime, displayedComponents: .hourAndMinute)
                 }
                 
-                Section("Location") {
-                    Toggle("Location Based", isOn: $isLocationBased)
+                Section(header: Text("Reminder")) {
+                    Toggle("Set Reminder", isOn: $reminder)
                     
-                    if isLocationBased {
-                        Button {
-                            showingLocationPicker = true
-                        } label: {
-                            if let location = location {
-                                Text(location.name)
-                            } else {
-                                Text("Select Location")
-                            }
-                        }
+                    if reminder {
+                        DatePicker("Reminder Time", selection: $reminderTime, displayedComponents: [.hourAndMinute])
                     }
                 }
             }
             .navigationTitle("New Habit")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
+            .navigationBarItems(
+                leading: Button("Cancel") {
+                    dismiss()
+                },
+                trailing: Button("Add") {
+                    let habit = Habit(
+                        title: title,
+                        frequency: frequency,
+                        reminder: reminder ? reminderTime : nil,
+                        notes: notes
+                    )
+                    taskManager.addHabit(habit)
+                    dismiss()
                 }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        createHabit()
-                    }
-                    .disabled(title.isEmpty)
-                }
-            }
-            .sheet(isPresented: $showingLocationPicker) {
-                LocationPickerView(selectedLocation: $location)
-            }
-        }
-    }
-    
-    private func createHabit() {
-        let habit = Habit(
-            id: UUID(),
-            title: title,
-            description: description,
-            frequency: frequency,
-            selectedDays: selectedDays,
-            reminderTime: reminderTime,
-            location: isLocationBased ? location : nil,
-            createdDate: Date(),
-            isActive: true,
-            currentStreak: 0,
-            completionRate: 0,
-            completedDates: []
-        )
-        
-        onHabitCreated(habit)
-        dismiss()
-    }
-}
-
-enum HabitSortOption: String, CaseIterable {
-    case name
-    case streak
-    case completion
-    case created
-    
-    var description: String {
-        switch self {
-        case .name: return "Name"
-        case .streak: return "Streak"
-        case .completion: return "Completion Rate"
-        case .created: return "Recently Created"
+                .disabled(title.isEmpty)
+            )
         }
     }
 }
 
-class HabitListViewModel: ObservableObject {
-    @Published private(set) var habits: [Habit] = []
-    
-    var activeHabits: [Habit] {
-        habits.filter { $0.isActive }
-    }
-    
-    var inactiveHabits: [Habit] {
-        habits.filter { !$0.isActive }
-    }
-    
-    func addHabit(_ habit: Habit) {
-        habits.append(habit)
-    }
-    
-    func updateHabit(_ habit: Habit) {
-        if let index = habits.firstIndex(where: { $0.id == habit.id }) {
-            habits[index] = habit
-        }
-    }
-    
-    func deleteHabit(_ habit: Habit) {
-        habits.removeAll { $0.id == habit.id }
-    }
-    
-    func toggleHabitStatus(_ habit: Habit) {
-        if let index = habits.firstIndex(where: { $0.id == habit.id }) {
-            habits[index].isActive.toggle()
-        }
-    }
+#Preview {
+    HabitListView()
+        .environmentObject(TaskManager())
 } 

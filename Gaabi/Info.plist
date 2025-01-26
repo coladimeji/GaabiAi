@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Gaabi needs your location to provide location-based features and smart home automation.</string>
+    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+    <string>Gaabi needs your location to provide location-based features and smart home automation.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Gaabi needs microphone access to record voice notes.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Gaabi needs speech recognition to transcribe your voice notes.</string>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>Gaabi needs to send notifications for task reminders and habit tracking.</string>
+</dict>
+</plist> 
